@@ -1,8 +1,7 @@
-# Found on FreeCAD forum, Originally written by Chris_G
-
 import FreeCAD
 import FreeCADGui
 import Part
+import Draft
 from math import pi
 
 def nurbs_flat_cone(face):
@@ -89,5 +88,7 @@ for so in sel:
         if isinstance(sub, Part.Face):
             flat_face = flatten_face(sub)
             if flat_face:
-                Part.show(flat_face)
+                sk = Draft.makeSketch(flat_face, autoconstraints=True)
+                FreeCAD.ActiveDocument.recompute()
+                #Part.show(flat_face)
 

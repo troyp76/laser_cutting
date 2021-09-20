@@ -1,0 +1,135 @@
+# -*- coding: utf-8 -*-
+# Togglevis is a macro created for FreeCAD .19 and is intended to toggle the visibility of selected/non selected objects to make it easer to edit when you have many objects in scene
+#
+# HOW TO USE: select the objects you want to keep visible (any vertex, edge, face will work) then run the macro. 
+# All non selected objects will be hidden. 
+# Run the macro again to restore previsous visibility state.
+#
+__title__    = "ToggleVis.py"
+__author__   = "Paulo Rogerio de Oliveira"
+__version__  = "1.0"
+__date__     = "2021/03/31"    #YYY/MM/DD
+
+__Comment__  = "hide unselected objects so you can edit then easily. restore prior visibility state running the macro again"
+__Help__     = "Select objects you must keep visible and run the macro. Run it again to restore previsous visibility"
+__Status__   = "stable"
+__Requires__ = "freecad 0.19 (not tested in previous versions)"
+
+import FreeCAD
+
+import PySide
+from PySide import QtGui ,QtCore
+from PySide.QtGui import *
+from PySide.QtCore import *
+doc = FreeCAD.ActiveDocument.Name
+# clear output window
+mw=Gui.getMainWindow()
+
+#	c=mw.findChild(QtGui.QPlainTextEdit, "Python console")
+#	c.clear()
+#	r=mw.findChild(QtGui.QTextEdit, "Report view")
+#	r.clear()
+
+#initialize cache
+if not hasattr(FreeCAD, "previouslyVisibleObjects"):
+	FreeCAD.previouslyVisibleObjects=[]
+if not hasattr(FreeCAD, "previouslyHiddenObjects"):
+	FreeCAD.previouslyHiddenObjects=[]
+
+# store all parents of all selected objects to ensure its keep visible (store the Label)
+# for parentList and selectedList, store the QTreeWidgetItem reference. Try to avoid error if change label while in edit mode
+parentList = []
+selectedList = []
+
+# try to get internal object associated with QTreeWidgetItem
+def getInternalObject(treeItem):
+	# first looks by Label
+	obj = App.ActiveDocument.getObjectsByLabel(treeItem.data(0,0))
+	if len(obj) > 0:
+		return obj[0]
+	else:
+		# if not found, looks by Name
+		return App.ActiveDocument.getObject(treeItem.data(0,0))
+	pass
+	
+# for each object in treeview
+def traverse(list, pad):
+	# for each child
+	for idx in range(list.childCount()):
+		item = list.child(idx)
+		name = item.data(0, 0)
+		obj = getInternalObject(item)
+
+		isParent = name in parentList
+		isSelected = name in selectedList
+
+		# hide any object that is visible and not parent of selected or selected itself - store it on list to restore state later
+		if obj.Visibility == True and not isParent and not isSelected:
+			obj.Visibility = False
+			FreeCAD.previouslyVisibleObjects.append(item)
+
+		# if not selected, not a group or if its parent of selected, traverse childs
+		if not isSelected: 
+			if not hasattr(obj, "Group") or isParent:
+				traverse	(item, pad + "  ")
+			
+
+# if there are objects in visibility cache, you are in edit mode		
+inEdit = len(FreeCAD.previouslyVisibleObjects) > 0
+if inEdit:
+	FreeCAD.Console.PrintLog('Leaving Edit Mode\n')
+	# show all objects that where visible when entered edit mode
+	for object in FreeCAD.previouslyVisibleObjects:
+		obj = getInternalObject(object)
+		try:
+			obj.Visibility = True
+		except:
+			pass
+	# hide all objects that where hidden when entered edit mode
+	for object in FreeCAD.previouslyHiddenObjects:
+		obj = getInternalObject(object)
+		try:
+			obj.Visibility = True
+		except:
+			pass
+	# reset visibility cache
+	FreeCAD.previouslyVisibleObjects = []
+	FreeCAD.previouslyHiddenObjects = []
+	FreeCADGui.SendMsgToActiveView("ViewFit")
+else:
+
+	tab = mw.findChild(QtGui.QTabWidget, u'combiTab')
+	tree = tab.widget(0).findChildren(QtGui.QTreeWidget)[0]
+	top = tree.invisibleRootItem().child(0)
+
+	# get selected objects
+	sels = FreeCADGui.Selection.getSelection()
+	if not sels:
+		FreeCAD.Console.PrintWarning("Select something first!\n\n")
+	else:
+		for obj in sels:
+			currentSelectedName = obj.Name
+		FreeCAD.Console.PrintLog('Entering Edit Mode of '+doc+' - '+currentSelectedName+'\n')
+		# import time
+		# start_time = time.time()
+		# find the treeitem for ActiveDocument
+		for idx in range(top.childCount()):
+			doc 	= top.child(idx)
+			if doc.data(0,0) == App.ActiveDocument.Label:
+				top = doc
+
+		# store a list of selected items and its parents to keep it visible
+		for sel in tree.selectedItems():
+			current = sel
+			selectedList.append(current.data(0,0))
+			while current:
+				obj = getInternalObject(current)
+				if hasattr(obj, "Visibility") and obj.Visibility == False:
+					FreeCAD.previouslyHiddenObjects.append(current)
+				current = current.parent()
+				if current:
+					parentList.append(current.data(0,0))
+
+		traverse(top, "")
+		FreeCADGui.SendMsgToActiveView("ViewFit")
+		# print("--- %s seconds ---" % (time.time() - start_time))
